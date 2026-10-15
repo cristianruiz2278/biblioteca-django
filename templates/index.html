@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Biblioteca</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 16px;
+            background: #f3f5f7;
+            color: #243247;
+        }
+
+        section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 24px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: end;
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        input, select, button {
+            padding: 9px;
+            font: inherit;
+        }
+
+        button {
+            background: #2457a6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #d5dbe3;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #e9eff8;
+        }
+
+        #mensaje {
+            min-height: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Biblioteca</h1>
+    <p>Registro de autores, libros y préstamos.</p>
+    <p id="mensaje" role="status"></p>
+
+    <section>
+        <h2>Autores</h2>
+
+        <form id="form-autores">
+            {% csrf_token %}
+
+            <label>
+                Nombre
+                <input name="nombre" maxlength="100" required>
+            </label>
+
+            <label>
+                Nacionalidad
+                <input name="nacionalidad" maxlength="60" required>
+            </label>
+
+            <button type="submit">Guardar autor</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Nacionalidad</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-autores"></tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Libros</h2>
+
+        <form id="form-libros">
+            <label>
+                Título
+                <input name="titulo" maxlength="150" required>
+            </label>
+
+            <label>
+                Año de publicación
+                <input
+                    name="anio_publicacion"
+                    type="number"
+                    min="1"
+                    max="9999"
+                    required
+                >
+            </label>
+
+            <label>
+                Autor
+                <select name="autor" id="select-autores" required></select>
+            </label>
+
+            <button type="submit">Guardar libro</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Título</th>
+                    <th>Año</th>
+                    <th>Autor</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-libros"></tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Préstamos</h2>
+
+        <form id="form-prestamos">
+            <label>
+                Nombre del lector
+                <input name="nombre_lector" maxlength="100" required>
+            </label>
+
+            <label>
+                Fecha
+                <input name="fecha_prestamo" type="date" required>
+            </label>
+
+            <label>
+                Libro
+                <select name="libro" id="select-libros" required></select>
+            </label>
+
+            <button type="submit">Guardar préstamo</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Lector</th>
+                    <th>Fecha</th>
+                    <th>Libro</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-prestamos"></tbody>
+        </table>
+    </section>
+
+    <script>
+        const mensaje = document.getElementById("mensaje");
+
+        const csrfToken = document.querySelector(
+            "[name=csrfmiddlewaretoken]"
+        ).value;
+
+        // Solicitudes GET a la API.
+        async function obtenerDatos(recurso) {
+            const respuesta = await fetch(`/api/${recurso}/`);
+
+            if (!respuesta.ok) {
+                throw new Error(`No se pudo consultar ${recurso}.`);
+            }
+
+            return respuesta.json();
+        }
+
+        // Crea celdas usando textContent, sin insertar HTML del usuario.
+        function mostrarTabla(idTabla, filas) {
+            const tabla = document.getElementById(idTabla);
+            tabla.replaceChildren();
+
+            for (const valores of filas) {
+                const fila = document.createElement("tr");
+
+                for (const valor of valores) {
+                    const celda = document.createElement("td");
+                    celda.textContent = valor;
+                    fila.appendChild(celda);
+                }
+
+                tabla.appendChild(fila);
+            }
+        }
+
+        function llenarSelect(idSelect, registros, campoTexto) {
+            const select = document.getElementById(idSelect);
+            select.replaceChildren();
+
+            const opcionInicial = document.createElement("option");
+            opcionInicial.value = "";
+            opcionInicial.textContent = "Selecciona una opción";
+            select.appendChild(opcionInicial);
+
+            for (const registro of registros) {
+                const opcion = document.createElement("option");
+                opcion.value = registro.id;
+                opcion.textContent = registro[campoTexto];
+                select.appendChild(opcion);
+            }
+        }
+
+        // Actualiza tablas y opciones de los formularios.
+        async function cargarTodo() {
+            const [autores, libros, prestamos] = await Promise.all([
+                obtenerDatos("autores"),
+                obtenerDatos("libros"),
+                obtenerDatos("prestamos")
+            ]);
+
+            const nombresAutores = new Map(
+                autores.map(autor => [autor.id, autor.nombre])
+            );
+
+            const titulosLibros = new Map(
+                libros.map(libro => [libro.id, libro.titulo])
+            );
+
+            mostrarTabla(
+                "tabla-autores",
+                autores.map(autor => [
+                    autor.id,
+                    autor.nombre,
+                    autor.nacionalidad
+                ])
+            );
+
+            mostrarTabla(
+                "tabla-libros",
+                libros.map(libro => [
+                    libro.id,
+                    libro.titulo,
+                    libro.anio_publicacion,
+                    nombresAutores.get(libro.autor) ?? libro.autor
+                ])
+            );
+
+            mostrarTabla(
+                "tabla-prestamos",
+                prestamos.map(prestamo => [
+                    prestamo.id,
+                    prestamo.nombre_lector,
+                    prestamo.fecha_prestamo,
+                    titulosLibros.get(prestamo.libro) ?? prestamo.libro
+                ])
+            );
+
+            llenarSelect("select-autores", autores, "nombre");
+            llenarSelect("select-libros", libros, "titulo");
+        }
+
+        // Conecta cada formulario con el POST de su recurso.
+        function conectarFormulario(recurso) {
+            const formulario = document.getElementById(
+                `form-${recurso}`
+            );
+
+            formulario.addEventListener("submit", async (evento) => {
+                evento.preventDefault();
+
+                const boton = formulario.querySelector("button");
+                boton.disabled = true;
+                mensaje.textContent = "";
+
+                const datos = Object.fromEntries(
+                    new FormData(formulario).entries()
+                );
+
+                // El token se envía en la cabecera, no como campo del recurso.
+                delete datos.csrfmiddlewaretoken;
+
+                try {
+                    const respuesta = await fetch(`/api/${recurso}/`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": csrfToken
+                        },
+                        body: JSON.stringify(datos)
+                    });
+
+                    if (!respuesta.ok) {
+                        const error = await respuesta.json();
+                        throw new Error(JSON.stringify(error));
+                    }
+
+                    formulario.reset();
+
+                    try {
+                        await cargarTodo();
+                        mensaje.textContent = "Registro guardado correctamente.";
+                    } catch (error) {
+                        mensaje.textContent =
+                            "El registro se guardó, pero no se pudieron " +
+                            "actualizar las tablas. Recarga la página.";
+                    }
+                } catch (error) {
+                    mensaje.textContent = `Error: ${error.message}`;
+                } finally {
+                    boton.disabled = false;
+                }
+            });
+        }
+
+        conectarFormulario("autores");
+        conectarFormulario("libros");
+        conectarFormulario("prestamos");
+
+        cargarTodo().catch(error => {
+            mensaje.textContent = error.message;
+        });
+    </script>
+</body>
+</html>
